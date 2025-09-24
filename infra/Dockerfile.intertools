@@ -1,0 +1,52 @@
+FROM node:18-alpine AS base
+
+# Install pnpm
+RUN npm install -g pnpm
+
+# Set working directory
+WORKDIR /app
+
+# Copy package files
+COPY package.json pnpm-workspace.yaml pnpm-lock.yaml* ./
+COPY turbo.json ./
+COPY packages/utils/package.json ./packages/utils/
+COPY packages/intertools/package.json ./packages/intertools/
+
+# Install dependencies
+RUN pnpm install --frozen-lockfile
+
+# Copy source code
+COPY packages/utils/ ./packages/utils/
+COPY packages/intertools/ ./packages/intertools/
+
+# Build packages first
+RUN pnpm build --filter=@langchain-flow/utils
+
+# Build intertools
+RUN pnpm build --filter=@langchain-flow/intertools
+
+# Production stage
+FROM node:18-alpine AS production
+
+RUN npm install -g pnpm
+
+WORKDIR /app
+
+# Copy package files
+COPY package.json pnpm-workspace.yaml ./
+COPY packages/intertools/package.json ./packages/intertools/
+COPY packages/utils/package.json ./packages/utils/
+
+# Install production dependencies
+RUN pnpm install --frozen-lockfile --prod
+
+# Copy built application
+COPY --from=base /app/packages/intertools/dist ./packages/intertools/dist
+COPY --from=base /app/packages/utils/dist ./packages/utils/dist
+
+# Set working directory to intertools
+WORKDIR /app/packages/intertools
+
+EXPOSE 3002
+
+CMD ["pnpm", "start"]

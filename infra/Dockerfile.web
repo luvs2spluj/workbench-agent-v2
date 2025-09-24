@@ -1,0 +1,58 @@
+FROM node:18-alpine AS base
+
+# Install pnpm
+RUN npm install -g pnpm
+
+# Set working directory
+WORKDIR /app
+
+# Copy package files
+COPY package.json pnpm-workspace.yaml pnpm-lock.yaml* ./
+COPY turbo.json ./
+COPY packages/ui/package.json ./packages/ui/
+COPY packages/utils/package.json ./packages/utils/
+COPY apps/web/package.json ./apps/web/
+
+# Install dependencies
+RUN pnpm install --frozen-lockfile
+
+# Copy source code
+COPY packages/ ./packages/
+COPY apps/web/ ./apps/web/
+
+# Build packages first
+RUN pnpm build --filter=@langchain-flow/ui
+RUN pnpm build --filter=@langchain-flow/utils
+
+# Build web app
+RUN pnpm build --filter=@langchain-flow/web
+
+# Production stage
+FROM node:18-alpine AS production
+
+RUN npm install -g pnpm
+
+WORKDIR /app
+
+# Copy package files
+COPY package.json pnpm-workspace.yaml ./
+COPY apps/web/package.json ./apps/web/
+COPY packages/ui/package.json ./packages/ui/
+COPY packages/utils/package.json ./packages/utils/
+
+# Install production dependencies
+RUN pnpm install --frozen-lockfile --prod
+
+# Copy built application
+COPY --from=base /app/apps/web/.next ./apps/web/.next
+COPY --from=base /app/packages/ui/dist ./packages/ui/dist
+COPY --from=base /app/packages/utils/dist ./packages/utils/dist
+COPY --from=base /app/apps/web/public ./apps/web/public
+COPY --from=base /app/apps/web/next.config.js ./apps/web/
+
+# Set working directory to web app
+WORKDIR /app/apps/web
+
+EXPOSE 3000
+
+CMD ["pnpm", "start"]

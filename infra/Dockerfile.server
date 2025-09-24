@@ -1,0 +1,52 @@
+FROM node:18-alpine AS base
+
+# Install pnpm
+RUN npm install -g pnpm
+
+# Set working directory
+WORKDIR /app
+
+# Copy package files
+COPY package.json pnpm-workspace.yaml pnpm-lock.yaml* ./
+COPY turbo.json ./
+COPY packages/utils/package.json ./packages/utils/
+COPY apps/server/package.json ./apps/server/
+
+# Install dependencies
+RUN pnpm install --frozen-lockfile
+
+# Copy source code
+COPY packages/utils/ ./packages/utils/
+COPY apps/server/ ./apps/server/
+
+# Build packages first
+RUN pnpm build --filter=@langchain-flow/utils
+
+# Build server
+RUN pnpm build --filter=@langchain-flow/server
+
+# Production stage
+FROM node:18-alpine AS production
+
+RUN npm install -g pnpm
+
+WORKDIR /app
+
+# Copy package files
+COPY package.json pnpm-workspace.yaml ./
+COPY apps/server/package.json ./apps/server/
+COPY packages/utils/package.json ./packages/utils/
+
+# Install production dependencies
+RUN pnpm install --frozen-lockfile --prod
+
+# Copy built application
+COPY --from=base /app/apps/server/dist ./apps/server/dist
+COPY --from=base /app/packages/utils/dist ./packages/utils/dist
+
+# Set working directory to server app
+WORKDIR /app/apps/server
+
+EXPOSE 3001
+
+CMD ["pnpm", "start"]
